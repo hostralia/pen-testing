@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  metasploit:
+    build: ./metasploit
+    image: metasploit-custom:latest
+    container_name: metasploit
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-msf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-msfpass}
+      POSTGRES_DB: ${POSTGRES_DB:-msf}
+      MSF_MODE: ${MSF_MODE:-console}   # console or rpc or shell
+    volumes:
+      - ./volumes/pgdata:/var/lib/postgresql/data
+      - ./volumes/msfdata:/root/.msf4
+    ports:
+      - "127.0.0.1:4444:4444"   # host binding (optional)
+      - "127.0.0.1:55553:55553" # RPC port (if you enable RPC)
+    networks:
+      - labnet
+    tty: true
+    stdin_open: true
+
+  kali:
+    build: ./kali
+    image: kali-custom:latest
+    container_name: kali
+    command: /bin/bash
+    tty: true
+    stdin_open: true
+    networks:
+      - labnet
+    volumes:
+      - ./volumes/kali_home:/root
+
+networks:
+  labnet:
+    driver: bridge

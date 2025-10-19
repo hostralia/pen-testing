@@ -1,0 +1,141 @@
+/*
+1) From the project root (msf-two-containers-lab):
+
+Build both images:
+
+docker compose build
+
+2) Start the Metasploit container first (it will initialize Postgres and the DB):
+docker compose up -d metasploit
+
+
+3) Watch logs to see postgres & msfconsole startup:
+
+docker compose logs -f metasploit
+# Look for lines: "Initializing Postgres..." then "Postgres started." then "Database setup done" then msfconsole splash.
+
+
+
+4) Start Kali container:
+
+docker compose up -d kali
+
+
+5) Confirm both containers are running on the isolated network:
+
+docker ps      # see metasploit and kali containers
+docker network inspect msf-two-containers-lab_labnet  # see containers attached (or docker network ls && docker network inspect labnet)
+
+
+/*
+
+useful commands
+
+# stop and remove containers & network created by compose, keep images/volumes
+docker compose down
+
+/*
+# if you also want to remove images built by compose (local images) + volumes:
+docker compose down --rmi local -v
+# or to remove all images (careful): --rmi all -v
+
+/**************************************************  sequence of events *************************************/
+
+1--Create a user-defined bridge network so containers can reach each other by service name:
+Docker network create labnet
+
+
+2-- Start Postgres (separate container):
+docker run -d \
+  --name msf_postgres \
+  --network labnet \
+  -e POSTGRES_USER=msf \
+  -e POSTGRES_PASSWORD=msfpass \
+  -e POSTGRES_DB=msf \
+  -v "$(pwd)/volumes/pgdata:/var/lib/postgresql/data/pgdata" \
+  postgres:15
+
+(Windows PowerShell: replace $(pwd) with ${PWD} or full path.)
+
+3 -- Wait for Postgres to become ready (quick check):
+
+
+# use postgres image's pg_isready to check
+docker run --rm --network labnet postgres:15 pg_isready -h msf_postgres -U msf
+
+
+4 -- Start Metasploit (connects to Postgres on the labnet network):
+
+docker run -it --name metasploit \
+  --network labnet \
+  -e POSTGRES_HOST=msf_postgres \
+  -e POSTGRES_PORT=5432 \
+  -e POSTGRES_USER=msf \
+  -e POSTGRES_PASSWORD=msfpass \
+  -e POSTGRES_DB=msf \
+  -v "$(pwd)/volumes/msfdata:/root/.msf4" \
+  metasploit-custom:latest
+
+If your metasploit image has an entrypoint that runs msfconsole, the container will start msfconsole.
+
+If not, use --entrypoint /bin/bash and run msfconsole inside.
+
+5 -- Start Kali:
+
+docker run -it --name kali \
+  --network labnet \
+  -v "$(pwd)/volumes/kali_home:/root" \
+  kali-custom:latest /bin/bash
+
+
+  Now containers can reach each other by name (msf_postgres, metasploit, kali). 
+  From metasploit container run msfconsole and inside it db_status to verify DB connection.
+  /************************************************************************************************************
+  
+  */
+6 --  Quick useful commands (manage / debug)
+    docker logs -f metasploit
+    docker logs -f msf_postgres
+
+Exec into running container:
+
+docker exec -it metasploit /bin/bash
+docker exec -it kali /bin/bash
+
+
+7 -- Stop & remove:
+docker rm -f metasploit kali msf_postgres
+docker rmi metasploit-custom:latest kali-custom:latest
+
+8 -- Remove network:
+docker network rm labnet
+
+
+F. Permission & volume notes (Windows gotchas)
+
+On Windows mount paths and UID/permissions sometimes cause Postgres to fail to initialize in volumes. If Postgres fails, try removing volumes/pgdata and let docker recreate it:
+
+# Windows PS
+Remove-Item -Recurse -Force .\volumes\pgdata
+
+
+Or prefer Docker named volumes to avoid host-permission issues:
+
+docker volume create msf_pgdata
+docker run -d --name msf_postgres --network labnet -v msf_pgdata:/var/lib/postgresql/data/pgdata ...
+
+G. If you want to keep orchestration but still build images separately
+
+You can still build images with docker build commands above, then use Compose only to orchestrate runtime:
+
+Build images manually (as in C), then docker compose up (with image: metasploit-custom:latest and no build:). Compose will reuse your local images and orchestrate startup order and networks.
+
+This gives best of both worlds.
+
+H. My recommendation (practical)
+
+For development: build images separately with docker build and run containers manually while iterating.
+
+For demo/teaching: keep a docker-compose.yml (clean, corrected) in repo so students can run docker compose up -d to bring the whole lab up. You can prebuild images locally or let Compose build them when needed.
+
+
