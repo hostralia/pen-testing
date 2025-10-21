@@ -1,9 +1,10 @@
 version: "3.8"
 
 services:
-  postgres:
-    image: postgres:15
-    container_name: msf_postgres
+  kali:
+    build: ./kali
+    image: kali-db:latest
+    container_name: kali
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-msf}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-msfpass}
@@ -11,50 +12,34 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ./volumes/pgdata:/var/lib/postgresql/data/pgdata
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-msf}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - ./volumes/kali_home:/root
+    ports:
+      - "127.0.0.1:5432:5432"   # optional: bind DB to host localhost only
     networks:
       - labnet
+    tty: true
+    stdin_open: true
 
   metasploit:
     build: ./metasploit
-    image: metasploit:latest
+    image: metasploit-custom:latest
     container_name: metasploit
     depends_on:
-      - postgres
+      - kali
     environment:
-      # only used if you later want the entrypoint to auto-create a database.yml
-      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_HOST: ${POSTGRES_HOST:-kali}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_USER: ${POSTGRES_USER:-msf}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-msfpass}
       POSTGRES_DB: ${POSTGRES_DB:-msf}
-      # do not auto-run msfdb in this setup
+      MSF_MODE: ${MSF_MODE:-console}   # console | rpc | shell
       MSFDB_INIT: "false"
     volumes:
       - ./volumes/msfdata:/root/.msf4
-    ports:
-      - "127.0.0.1:4444:4444"
-      - "127.0.0.1:55553:55553"
     networks:
       - labnet
     tty: true
     stdin_open: true
-
-  kali:
-    build: ./kali
-    image: kali:latest
-    container_name: kali
-    command: /bin/bash
-    tty: true
-    stdin_open: true
-    networks:
-      - labnet
-    volumes:
-      - ./volumes/kali_home:/root
 
 networks:
   labnet:
